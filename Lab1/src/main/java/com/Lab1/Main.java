@@ -1,14 +1,14 @@
 package com.Lab1;
 
 import java.io.IOException;
-import java.util.*;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Scanner;
 
 public class Main {
     private static final Scanner scanner = new Scanner(System.in);
-    private static final List<Room> rooms = new ArrayList<>();
-    private static final List<Visitor> visitors = new ArrayList<>();
-    private static final List<Booking> bookings = new ArrayList<>();
-
+    private static final Hotel hotel = new Hotel();
     private static final RoomFileIO fileIO = new RoomFileIOImpl();
     private static final RoomService roomService = new RoomService(fileIO);
 
@@ -51,13 +51,23 @@ public class Main {
     private static int readInt(String prompt) {
         System.out.print(prompt);
         while (!scanner.hasNextInt()) {
-            scanner.next(); // пропустити помилкове
+            scanner.next();
             System.out.print("Введіть число: ");
         }
         return scanner.nextInt();
     }
 
+    private static double readDouble(String prompt) {
+        System.out.print(prompt);
+        while (!scanner.hasNextDouble()) {
+            scanner.next();
+            System.out.print("Введіть число: ");
+        }
+        return scanner.nextDouble();
+    }
+
     private static void showRooms() {
+        List<Room> rooms = hotel.getRooms();
         if (rooms.isEmpty()) {
             System.out.println("Список номерів порожній.");
             return;
@@ -73,31 +83,19 @@ public class Main {
         System.out.print("Тип кімнати: ");
         String type = scanner.next();
         double price = readDouble("Ціна за ніч: ");
-        rooms.add(new Room(number, type, price, true));
+        hotel.addRoom(new Room(number, type, price, true));
         System.out.println("Кімната додана.");
     }
 
     private static void deleteRoom() {
         int number = readInt("Введіть номер кімнати для видалення: ");
-        rooms.removeIf(r -> r.getRoomNumber() == number);
+        hotel.removeRoomByNumber(number);
         System.out.println("Кімната видалена, якщо була знайдена.");
-    }
-
-    private static double readDouble(String prompt) {
-        System.out.print(prompt);
-        while (!scanner.hasNextDouble()) {
-            scanner.next();
-            System.out.print("Введіть число: ");
-        }
-        return scanner.nextDouble();
     }
 
     private static void bookRoom() {
         int roomNumber = readInt("Введіть номер кімнати для бронювання: ");
-        Room room = rooms.stream()
-                .filter(r -> r.getRoomNumber() == roomNumber && r.isAvailable())
-                .findFirst()
-                .orElse(null);
+        Room room = hotel.findAvailableRoomByNumber(roomNumber);
         if (room == null) {
             System.out.println("Кімната не знайдена або недоступна.");
             return;
@@ -107,20 +105,20 @@ public class Main {
         String name = scanner.next();
         System.out.print("Телефон: ");
         String phone = scanner.next();
-        int id = visitors.size() + 1;
+        int id = hotel.getVisitors().size() + 1;
         Visitor visitor = new Visitor(id, name, phone);
-        visitors.add(visitor);
+        hotel.addVisitor(visitor);
 
-        System.out.print("Дата заселення (yyyy-mm-dd): ");
+        System.out.print("Дата початку (yyyy-mm-dd): ");
         String startStr = scanner.next();
-        System.out.print("Дата виселення (yyyy-mm-dd): ");
+        System.out.print("Дата завершення (yyyy-mm-dd): ");
         String endStr = scanner.next();
 
         try {
             Booking booking = new Booking(visitor, room,
-                    java.time.LocalDate.parse(startStr),
-                    java.time.LocalDate.parse(endStr));
-            bookings.add(booking);
+                    LocalDate.parse(startStr),
+                    LocalDate.parse(endStr));
+            hotel.addBooking(booking);
             room.setAvailable(false);
             System.out.println("Бронювання додано. Загальна сума: " + booking.calculateTotalPrice());
         } catch (Exception e) {
@@ -129,6 +127,7 @@ public class Main {
     }
 
     private static void showBookingStats() {
+        List<Booking> bookings = hotel.getBookings();
         if (bookings.isEmpty()) {
             System.out.println("Немає жодної броні.");
             return;
@@ -136,24 +135,24 @@ public class Main {
 
         System.out.println("Загальна кількість бронювань: " + bookings.size());
 
-        long count = bookings.stream()
+        long uniqueRoomCount = bookings.stream()
                 .map(Booking::getRoom)
                 .distinct()
                 .count();
-        System.out.println("Кількість заброньованих кімнат: " + count);
+        System.out.println("Кількість заброньованих кімнат: " + uniqueRoomCount);
 
         System.out.println("\n--- Деталі бронювань ---");
         for (Booking booking : bookings) {
             Room room = booking.getRoom();
             Visitor visitor = booking.getVisitor();
-            long nights = java.time.temporal.ChronoUnit.DAYS.between(booking.getStartDate(), booking.getEndDate());
+            long nights = ChronoUnit.DAYS.between(booking.getStartDate(), booking.getEndDate());
 
             System.out.printf("""
-                Номер кімнати: %d | Тип: %s | Ціна за ніч: %.2f
-                Відвідувач: %s | Телефон: %s
-                Кількість ночей: %d
-                -----------------------------
-                """,
+                    Номер кімнати: %d | Тип: %s | Ціна за ніч: %.2f
+                    Відвідувач: %s | Телефон: %s
+                    Кількість ночей: %d
+                    -----------------------------
+                    """,
                     room.getRoomNumber(), room.getType(), room.getPricePerNight(),
                     visitor.getName(), visitor.getPhone(), nights);
         }
@@ -163,7 +162,7 @@ public class Main {
         System.out.print("Введіть ім'я файлу для експорту: ");
         String filename = scanner.next();
         try {
-            roomService.exportSortedByPrice(filename, rooms);
+            roomService.exportSortedByPrice(filename, hotel.getRooms());
             System.out.println("Експорт виконано.");
         } catch (IOException e) {
             System.out.println("Помилка експорту: " + e.getMessage());
@@ -175,9 +174,9 @@ public class Main {
         String filename = scanner.next();
         try {
             List<Room> imported = roomService.importRooms(filename);
-            rooms.clear();
-            rooms.addAll(imported);
-            System.out.println("Імпорт виконано. Кількість кімнат: " + rooms.size());
+            hotel.getRooms().clear();
+            hotel.getRooms().addAll(imported);
+            System.out.println("Імпорт виконано. Кількість кімнат: " + hotel.getRooms().size());
         } catch (IOException e) {
             System.out.println("Помилка імпорту: " + e.getMessage());
         }
